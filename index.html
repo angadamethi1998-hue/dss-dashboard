@@ -266,10 +266,10 @@ let bdT,bdW=0;window.addEventListener("resize",()=>{clearTimeout(bdT);bdT=setTim
 document.addEventListener("click",e=>{const t=e.target.closest(".bdt button");if(!t)return;BDM=t.dataset.m;document.querySelectorAll(".bdt button").forEach(x=>x.classList.toggle("on",x===t));bdChart()});
 function alertPill(u){return{late:`<span class="pill p-late">Delayed · ${-u.days} d</span>`,soon:`<span class="pill p-soon">Due in ${u.days} d</span>`,ok:'<span class="pill p-ok">On schedule</span>',done:u.repl?`<span class="pill p-soon">Replanned</span>`:u.short?'<span class="pill p-soon">Short closed</span>':'<span class="pill p-done">Completed</span>',none:"—"}[u.al]}
 function render(){const R=rows(),sum=(A,k)=>A.reduce((a,u)=>a+u[k],0);
- const FYS=(TODAY.getMonth()>=3?TODAY.getFullYear():TODAY.getFullYear()-1)+"-04-01",FYL=String(+FYS.slice(2,4))+"-"+String(+FYS.slice(2,4)+1),ytd=R.filter(u=>u.sodate&&u.sodate>=FYS).reduce((a,u)=>a+u.order,0);const ord=sum(R,"order"),dsp=sum(R,"disp"),out=sum(R,"out"),late=R.filter(u=>u.al=="late"),soon=R.filter(u=>u.al=="soon");
+ const CY=TODAY.getFullYear(),ytd=R.filter(u=>u.sodate&&+u.sodate.slice(0,4)===CY).reduce((a,u)=>a+(u.orderSO!=null?u.orderSO:u.order),0);const ord=sum(R,"order"),dsp=sum(R,"disp"),out=sum(R,"out"),late=R.filter(u=>u.al=="late"),soon=R.filter(u=>u.al=="soon");
  const lq=sum(late,"out"),sq=sum(soon,"out"),okq=Math.max(0,out-lq-sq);
  const kp=[["UIDs",R.length.toLocaleString(),R.filter(u=>u.al!="done").length+" open",""],["Work orders",new Set(R.flatMap(u=>[...u.wos])).size,"",""],
- ["Order Qty YTD",f1(ytd),"FY "+FYL+" · all orders "+f1(ord)+" MT","g"],["Dispatched MT",f1(dsp),ord?Math.round(dsp/ord*100)+"% of order":"","g"],["Outstanding MT",f1(out),ord?Math.round(out/ord*100)+"% of order":"","w"],
+ ["Order Qty YTD",f1(ytd),"Jan–Dec "+CY+" · all orders "+f1(ord)+" MT","g"],["Dispatched MT",f1(dsp),ord?Math.round(dsp/ord*100)+"% of order":"","g"],["Outstanding MT",f1(out),ord?Math.round(out/ord*100)+"% of order":"","w"],
  ["Project UIDs",R.filter(u=>u.proj).length,"",""],["Shipment alerts",late.length+soon.length,late.length+" delayed · "+soon.length+" due ≤15 d","b"]];
  $("kpis").innerHTML=kp.map(([l,v,s,c])=>`<div class="card kpi ${c}"><span>${l}</span><b>${v}</b><small>${s||"&nbsp;"}</small></div>`).join("");
  const O=R.filter(u=>u.out>=.0005),m1={},m2={},m4={};

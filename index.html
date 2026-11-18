@@ -383,8 +383,10 @@ async function load(first){if(!KEY||busy)return;busy=true;$("rf").textContent="R
 $("lf").onsubmit=e=>{e.preventDefault();KEY=$("pw").value;if(!KEY)return;store.set(KEY,$("rem").checked);$("pw").value="";load(true)};
 $("rf").onclick=()=>load(false);
 $("out").onclick=()=>{KEY="";store.clear();apply(SEED,false);showLock("")};
-setInterval(()=>load(false),REFRESH_MINUTES*6e4);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&KEY)load(false)});
+const dayChanged=()=>{const n=new Date();n.setHours(0,0,0,0);return n.getTime()!==TODAY.getTime()};
+setInterval(()=>{if(dayChanged())return location.reload();load(false)},REFRESH_MINUTES*6e4);
+setInterval(()=>{if(dayChanged())location.reload()},6e4);
+document.addEventListener("visibilitychange",()=>{if(document.hidden)return;if(dayChanged())return location.reload();if(KEY)load(false)});
 KEY=store.get();if(KEY){document.querySelector(".wrap").style.visibility="hidden";load(true)}else showLock("");
 </script>
 </body></html>

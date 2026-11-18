@@ -195,8 +195,10 @@ function ptype(x){x=String(x||"").trim().replace(/\s+bars?$/i,"");if(!x)return"O
  const M={rd:"Round",round:"Round",flat:"Flat",fl:"Flat",sq:"Square",square:"Square",psq:"PSQ",hex:"Hex",hexagon:"Hex",angle:"Angle",ang:"Angle"};
  return M[k]||x.replace(/\b\w/g,c=>c.toUpperCase())}
 function merge(S){
+ const I_POUT=p=>p.pout!=null&&p.pout!=="";
  const N=["order","cast","roll","ht","inw","ins","pack","disp"],P=new Map(),A=new Map();
- for(const p of S.plines){const k=nu(p.uid);let a=P.get(k);if(!a){a={...p,uid:k,ws:new Set(),rs:new Set()};N.forEach(x=>a[x]=0);a.ship="";P.set(k,a)}
+ for(const p of S.plines){const k=nu(p.uid);let a=P.get(k);if(!a){a={...p,uid:k,ws:new Set(),rs:new Set(),pout:null};N.forEach(x=>a[x]=0);a.ship="";P.set(k,a)}
+  if(I_POUT(p))a.pout=Math.max(a.pout==null?-1:a.pout,+p.pout||0);
   N.forEach(x=>a[x]+=+p[x]||0);if(p.wo)a.ws.add(p.wo);if(p.rem)a.rs.add(p.rem);if(p.ship&&(!a.ship||p.ship<a.ship))a.ship=p.ship}
  for(const r of S.arows){const k=nu(r.uid);const a=A.get(k);
   if(!a){A.set(k,{...r,uid:k});continue}
@@ -210,7 +212,11 @@ function merge(S){
    fsize:p&&p.fsize?p.fsize:(shape=="Round"?size+" Dia":size.replace(/ X /g," x ")),shape,order:a.order,disp:Math.round(disp*1000)/1000,
    cast:p?p.cast:0,roll:p?p.roll:0,ht:p?p.ht:0,inw:p?p.inw:0,ins:p?p.ins:0,pack:p?p.pack:0,
    po:a.po||(p&&p.po)||"",tol:(p&&p.tol)||a.tol,htc:(p&&p.htc)||a.htc,exec:(p&&p.exec)||a.exec,dterm:(p&&p.dterm)||"",
-   so:a.so,exin:a.exin,art:a.art,sost:a.sost,ost:a.ost||"",closed,sodate:a.sodate||"",ptype:ptype(a.shape||(p&&p.shape)),rem:p?[...p.rs].join(" · "):"",src:p?"P":"A"})}
+   so:a.so,exin:a.exin,art:a.art,sost:a.sost,ost:a.ost||"",closed,sodate:a.sodate||"",ptype:ptype(a.shape||(p&&p.shape)),rem:p?[...p.rs].join(" · "):"",src:p?"P":"A",pout:p&&p.pout!=null?p.pout:null})}
+ for(const[u,a]of P){if(A.has(u))continue;
+  out.push({cust:"DSS",cont:"Europe",wo:[...a.ws].join(", "),ship:a.ship,uid:u,grade:a.grade||"",fsize:a.fsize||"",shape:a.shape||"",order:a.order,disp:Math.round(a.disp*1000)/1000,
+   cast:a.cast,roll:a.roll,ht:a.ht,inw:a.inw,ins:a.ins,pack:a.pack,po:a.po||"",tol:a.tol||"",htc:a.htc||"",exec:a.exec||"",dterm:a.dterm||"",so:"",exin:"",art:"",sost:"",ost:"Open",closed:false,sodate:"",ptype:ptype(a.shape),
+   rem:["Not yet in ASL DATA",...a.rs].join(" · "),src:"P",pout:a.pout,pmOnly:true})}
  // Rejected in production and replanned: closed UID whose order weight ≈ its dispatched weight + a new UID's weight
  const key=l=>[l.grade,String(l.fsize).toLowerCase().replace(/\s+/g,"")].join("|"),num=x=>+(String(x).replace(/\D/g,""))||0;
  for(const l of out){if(!l.closed||l.order-l.disp<=0.0005)continue;const rest=l.order-l.disp,tol=Math.max(0.05*l.order,0.2);
@@ -233,7 +239,7 @@ function build(){const M=new Map();
   u.wos.add(l.wo);if(l.so)u.sos.add(l.so);["order","cast","roll","ht","inw","ins","pack","disp"].forEach(k=>u[k]+=l[k]);
   if(l.ship&&(!u.ship||l.ship<u.ship))u.ship=l.ship;if(l.rem){u.rems=u.rems||new Set();u.rems.add(l.rem)}u.lines.push(l)}
  UIDS=[...M.values()];
- for(const u of UIDS){u.closed=!!u.lines[0].closed;u.ost=u.lines[0].ost;u.closeType=u.lines[0].closeType;u.repl=u.lines[0].repl;u.replFrom=u.lines[0].replFrom;u.wo=[...u.wos].join(", ");u.rem=u.rems?[...u.rems].join(" · "):"";u.so=[...u.sos].join(", ");u.orderSO=u.order;if(u.repl)u.order=u.disp;u.out=u.closed?0:Math.max(0,u.order-u.disp);u.short=u.closed&&u.orderSO-u.disp>0.0005;u.pct=u.order?Math.min(100,u.disp/u.order*100):0;u.proj=/^P/i.test(u.uid);
+ for(const u of UIDS){u.closed=!!u.lines[0].closed;u.ost=u.lines[0].ost;u.closeType=u.lines[0].closeType;u.repl=u.lines[0].repl;u.replFrom=u.lines[0].replFrom;u.wo=[...u.wos].join(", ");u.rem=u.rems?[...u.rems].join(" · "):"";u.so=[...u.sos].join(", ");u.orderSO=u.order;if(u.repl)u.order=u.disp;u.pout=u.lines[0].pout;u.pmOnly=!!u.lines[0].pmOnly;u.out=u.closed?0:u.pout!=null?Math.round(u.pout*1000)/1000:Math.max(0,u.order-u.disp);u.short=u.closed&&u.orderSO-u.disp>0.0005;u.pct=u.order?Math.min(100,u.disp/u.order*100):0;u.proj=/^P/i.test(u.uid);
   u.days=daysTo(u.ship);u.al=u.out<0.0005?"done":u.days==null?"none":u.days<0?"late":u.days<=15?"soon":"ok";
   
   u.stage=u.closed?u.closeType:u.out<0.0005?"Dispatched":u.disp>0?"Partly dispatched":u.pack>0?"Packed":u.ins>0?"Inspected":u.inw>0?"Inward":u.ht>0?"Heat treated":u.roll>0?"Rolled":u.cast>0?"Cast":"Order confirmed"}
@@ -265,7 +271,7 @@ $("c6").innerHTML=`<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-la
 let bdT,bdW=0;window.addEventListener("resize",()=>{clearTimeout(bdT);bdT=setTimeout(()=>BDR.length&&bdChart(),150)});if(window.ResizeObserver)new ResizeObserver(()=>{const w=$("c6")&&$("c6").clientWidth;if(w&&Math.abs(w-bdW)>4&&BDR.length){bdW=w;clearTimeout(bdT);bdT=setTimeout(()=>bdChart(),60)}}).observe(document.getElementById("c6"));
 document.addEventListener("click",e=>{const t=e.target.closest(".bdt button");if(!t)return;BDM=t.dataset.m;document.querySelectorAll(".bdt button").forEach(x=>x.classList.toggle("on",x===t));bdChart()});
 function alertPill(u){return{late:`<span class="pill p-late">Delayed · ${-u.days} d</span>`,soon:`<span class="pill p-soon">Due in ${u.days} d</span>`,ok:'<span class="pill p-ok">On schedule</span>',done:u.repl?`<span class="pill p-soon">Replanned</span>`:u.short?'<span class="pill p-soon">Short closed</span>':'<span class="pill p-done">Completed</span>',none:"—"}[u.al]}
-function render(){const R=rows(),sum=(A,k)=>A.reduce((a,u)=>a+u[k],0);
+function render(){const R=rows(),sum=(A,k)=>A.reduce((a,u)=>a+((u.pmOnly&&(k=="order"||k=="disp"))?0:u[k]),0);
  const CY=TODAY.getFullYear(),ytd=R.filter(u=>u.sodate&&+u.sodate.slice(0,4)===CY).reduce((a,u)=>a+(u.orderSO!=null?u.orderSO:u.order),0);const ord=sum(R,"order"),dsp=sum(R,"disp"),out=sum(R,"out"),late=R.filter(u=>u.al=="late"),soon=R.filter(u=>u.al=="soon");
  const lq=sum(late,"out"),sq=sum(soon,"out"),okq=Math.max(0,out-lq-sq);
  const kp=[["UIDs",R.length.toLocaleString(),R.filter(u=>u.al!="done").length+" open",""],["Work orders",new Set(R.flatMap(u=>[...u.wos])).size,"",""],
@@ -274,7 +280,7 @@ function render(){const R=rows(),sum=(A,k)=>A.reduce((a,u)=>a+u[k],0);
  $("kpis").innerHTML=kp.map(([l,v,s,c])=>`<div class="card kpi ${c}"><span>${l}</span><b>${v}</b><small>${s||"&nbsp;"}</small></div>`).join("");
  const O=R.filter(u=>u.out>=.0005),m1={},m2={},m4={};
  O.forEach(u=>{m1[u.grade||"—"]=(m1[u.grade||"—"]||0)+u.out;if(u.ship){const k=MON[+u.ship.slice(5,7)-1]+" "+u.ship.slice(2,4)+"|"+u.ship.slice(0,7);m2[k]=(m2[k]||0)+u.out}});
- const stF=!!$("fa").value,mk=stF?"out":"order",m5={};R.forEach(u=>{const k=u.wo;m4[k]=(m4[k]||0)+u[mk];m5[u.ptype]=(m5[u.ptype]||0)+u[mk]});$("c4t").textContent=(stF?"Remaining MT":"Order MT")+" by work order (top 8)";$("c5t").textContent=(stF?"Remaining MT":"Order MT")+" by product type";if(stF){for(const k in m4)if(m4[k]<0.0005)delete m4[k];for(const k in m5)if(m5[k]<0.0005)delete m5[k]}bars("c5",m5);bdChart(R);bonus();
+ const stF=!!$("fa").value,mk=stF?"out":"order",m5={};R.forEach(u=>{const k=u.wo,v=u.pmOnly&&mk=="order"?0:u[mk];if(!v&&u.pmOnly)return;m4[k]=(m4[k]||0)+v;m5[u.ptype]=(m5[u.ptype]||0)+v});$("c4t").textContent=(stF?"Remaining MT":"Order MT")+" by work order (top 8)";$("c5t").textContent=(stF?"Remaining MT":"Order MT")+" by product type";if(stF){for(const k in m4)if(m4[k]<0.0005)delete m4[k];for(const k in m5)if(m5[k]<0.0005)delete m5[k]}bars("c5",m5);bdChart(R);bonus();
  bars("c1",m1);bars("c2",m2,f1,(a,b)=>a[0].split("|")[1].localeCompare(b[0].split("|")[1]));bars("c4",m4);
  const tot=Math.max(out,.001);
  $("c3").innerHTML=`<div class="stk"><i style="width:${lq/tot*100}%;background:var(--bad)"></i><i style="width:${sq/tot*100}%;background:var(--wn)"></i><i style="width:${okq/tot*100}%;background:var(--ok)"></i></div>
@@ -352,7 +358,7 @@ function nd(v){const s=String(v??"").trim();if(!s)return"";let m=s.match(/^(\d{4
 const num=v=>{const x=parseFloat(String(v??"").replace(/[,\s€]/g,""));return isNaN(x)?0:x},str=v=>String(v??"").trim();
 function table(raw,need){for(let i=0;i<Math.min(raw.length,30);i++){const h=raw[i].map(ck);if(need.every(n=>h.some(x=>x==ck(n))))return{h,rows:raw.slice(i+1)}}return null}
 const col=(h,...names)=>{for(const n of names){const i=h.indexOf(ck(n));if(i>=0)return i}for(const n of names){const i=h.findIndex(x=>x.startsWith(ck(n)));if(i>=0)return i}return -1};
-const PM={cust:["Customer","Customer Code"],cont:["Continent","Region"],wo:["WO No.","WO No","Work Order"],ship:["Shipment Dt.","Shipment Date","Shipment"],uid:["Uid","UID"],grade:["Grade"],fsize:["F Size"],shape:["F Shape","Product","Shape"],order:["Order Wt.","Order MT","Order Wt"],inw:["Inward Wt."],ins:["Ins Wt.","Inspection Wt","Ins Wt"],cast:["Cast Wt"],roll:["Roll Wt"],ht:["Ht Wt"],pack:["Packed Wt in warehouse + U2+U4","Packed Wt"],rem:["Remarks","Remark"],disp:["Dispatch wt","Dispatch MT","Dispatch Wt"],po:["Cust Ord No","Cust Ord No.","Customer PO"],tol:["Size Toll.","Size Tolerance"],htc:["HT Condition"],exec:["Exceution","Execution"],dterm:["DTerm"]};
+const PM={pout:["Outstanding Wt (Order Wt - Dispatch Wt)","Outstanding Wt"],cust:["Customer","Customer Code"],cont:["Continent","Region"],wo:["WO No.","WO No","Work Order"],ship:["Shipment Dt.","Shipment Date","Shipment"],uid:["Uid","UID"],grade:["Grade"],fsize:["F Size"],shape:["F Shape","Product","Shape"],order:["Order Wt.","Order MT","Order Wt"],inw:["Inward Wt."],ins:["Ins Wt.","Inspection Wt","Ins Wt"],cast:["Cast Wt"],roll:["Roll Wt"],ht:["Ht Wt"],pack:["Packed Wt in warehouse + U2+U4","Packed Wt"],rem:["Remarks","Remark"],disp:["Dispatch wt","Dispatch MT","Dispatch Wt"],po:["Cust Ord No","Cust Ord No.","Customer PO"],tol:["Size Toll.","Size Tolerance"],htc:["HT Condition"],exec:["Exceution","Execution"],dterm:["DTerm"]};
 function parseRaw(raw,got){let t;
  if((t=table(raw,["Export Inv. No."]))){const h=t.h,I={inv:col(h,"Export Inv. No."),idate:col(h,"Invoice Date"),due:col(h,"Due Date as per Contract","Due Date"),st:col(h,"Payment Status","Status"),pd:col(h,"Payment Date","Paid Date","Payment Received Date"),cust:col(h,"Customer Full Name")};
   const g=(r,k)=>I[k]<0?"":r[I[k]];
@@ -363,7 +369,7 @@ function parseRaw(raw,got){let t;
   const sh=I.grade>=0?I.grade:0;const g=(r,k)=>{if(I[k]<0)return"";const o=isU(r[I.uid])?0:isU(r[I.uid+1])?1:isU(r[I.uid-1])?-1:0;return r[I[k]+(I[k]>=sh?o:0)]};
   got.arows=t.rows.filter(r=>isU(g(r,"uid"))).map(r=>({uid:str(g(r,"uid")),disp:I.disp<0?null:num(g(r,"disp")),pend:num(g(r,"pend")),ost:str(g(r,"ost")),sodate:nd(g(r,"sodate")),so:str(g(r,"so")),exin:nd(g(r,"exin")),po:str(g(r,"po")),shape:str(g(r,"shape")),exec:str(g(r,"exec")),grade:str(g(r,"grade")),tol:str(g(r,"tol")),size:str(g(r,"size")),htc:str(g(r,"htc")),order:num(g(r,"order")),outw:num(g(r,"outw")),sost:str(g(r,"sost")),art:str(g(r,"art"))}));return"orders"}
  if((t=table(raw,["Uid","Customer"]))&&col(t.h,"Order Wt.","Order MT","Order Wt")>=0){const I={};for(const k in PM)I[k]=col(t.h,...PM[k]);const g=(r,k)=>I[k]<0?"":r[I[k]];
-  got.plines=t.rows.filter(r=>/DSS/i.test(str(g(r,"cust")))&&str(g(r,"uid"))).map(r=>{const o={};for(const k in PM)o[k]=["order","cast","roll","ht","inw","ins","pack","disp"].includes(k)?num(g(r,k)):k=="ship"?nd(g(r,k)):str(g(r,k));o.po=o.po.replace(/,$/,"");return o});return"pmst"}
+  got.plines=t.rows.filter(r=>/DSS/i.test(str(g(r,"cust")))&&str(g(r,"uid"))).map(r=>{const o={};for(const k in PM)o[k]=["order","cast","roll","ht","inw","ins","pack","disp","pout"].includes(k)?num(g(r,k)):k=="ship"?nd(g(r,k)):str(g(r,k));o.po=o.po.replace(/,$/,"");return o});return"pmst"}
  return null}
 let busy=false,KEY="";
 const store={get(){try{return localStorage.getItem("dssKey")||sessionStorage.getItem("dssKey")||""}catch(e){return""}},

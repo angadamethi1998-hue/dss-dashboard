@@ -80,6 +80,7 @@ tr.late{box-shadow:inset 3px 0 0 var(--bad)}tr.soon{box-shadow:inset 3px 0 0 var
 .view{display:none}.view.on{display:block}
 .src-note{font-size:11px;color:var(--mu);margin-top:6px}
 .tag.n{color:var(--ok);background:var(--oks)}
+.tag.asil{color:#7c5cff;background:rgba(124,92,255,.15)}
 .pay td,.pay th{white-space:nowrap}.pay table{min-width:720px}
 .tot td{font-weight:700;background:var(--sf2);cursor:default}
 .lock{position:fixed;inset:0;background:var(--bg);z-index:30;display:grid;place-items:center;padding:20px}
@@ -142,6 +143,7 @@ td.rem{white-space:normal;min-width:180px;max-width:320px;color:var(--tx)}
 <div class="card" id="warn" style="display:none;border-color:var(--wn);background:var(--wns);margin-bottom:14px"></div>
 <section class="view" id="v-orders">
 <div class="flt">
+ <div><label>Supplying unit</label><select id="fu"><option value="">All units</option><option value="ASL">ASL · melting &amp; rolling</option><option value="ASIL">ASIL · bright bar (D07G)</option></select></div>
  <div><label>Work order</label><select id="fs"></select></div>
  <div><label>Grade</label><select id="fg"></select></div>
  <div><label>Shipment month</label><select id="fm"></select></div>
@@ -217,9 +219,18 @@ function merge(S){
   out.push({cust:"DSS",cont:"Europe",wo:[...a.ws].join(", "),ship:a.ship,uid:u,grade:a.grade||"",fsize:a.fsize||"",shape:a.shape||"",order:a.order,disp:Math.round(a.disp*1000)/1000,
    cast:a.cast,roll:a.roll,ht:a.ht,inw:a.inw,ins:a.ins,pack:a.pack,po:a.po||"",tol:a.tol||"",htc:a.htc||"",exec:a.exec||"",dterm:a.dterm||"",so:"",exin:"",art:"",sost:"",ost:"Open",closed:false,sodate:"",ptype:ptype(a.shape),
    rem:["Not yet in ASL DATA",...a.rs].join(" · "),src:"P",pout:a.pout,pmOnly:true})}
+ // ASIL (bright bar unit) orders for D07G, linked to their ASL rolling UIDs
+ const AM=new Map();(S.amap||[]).forEach(m=>{if(!AM.has(m.a))AM.set(m.a,[]);AM.get(m.a).push(m)});
+ const AP=new Map();(S.aplines||[]).forEach(p=>{const k=p.uid;let a=AP.get(k);if(!a){a={cast:0,roll:0,ht:0,inw:0,ins:0,pack:0,ws:new Set(),ship:""};AP.set(k,a)}["cast","roll","ht","inw","ins","pack"].forEach(x=>a[x]+=+p[x]||0);if(p.wo)a.ws.add(p.wo);if(p.ship&&(!a.ship||p.ship<a.ship))a.ship=p.ship});
+ for(const a of (S.asil||[])){const ms=AM.get(a.d)||[],ps=ms.map(m=>AP.get(m.p)).filter(Boolean),sm=k=>ps.reduce((t,p)=>t+p[k],0);
+  const c={cast:sm("cast"),roll:sm("roll"),ht:sm("ht"),inw:sm("inw"),ins:sm("ins"),pack:sm("pack")},aslU=ms.map(m=>m.u).join(", "),aslWO=[...new Set(ps.flatMap(p=>[...p.ws]))].join(", ");
+  const astage=a.inv>0.0005&&a.pend<0.0005?"Dispatched":a.inv>0.0005?"Partly dispatched":ps.length?"At ASL · "+(c.pack>0?"Packed":c.ins>0?"Inspected":c.inw>0?"Inward":c.ht>0?"Heat treated":c.roll>0?"Rolled":c.cast>0?"Cast":"Order confirmed"):ms.length?"At ASIL · Bright bar":"Order confirmed";
+  out.push({cust:"D07G",unit:"ASIL",cont:"Europe",wo:a.so,ship:a.ship||(ps[0]&&ps[0].ship)||"",uid:a.d,grade:a.grade,fsize:a.size,shape:a.shape,order:a.qty,disp:Math.round(a.inv*1000)/1000,...c,
+   po:a.po,tol:a.tol,htc:"",exec:a.exec,dterm:"",so:a.so,exin:"",art:a.art,sost:a.lst,ost:a.ost||"Open",closed:false,sodate:a.sod,ptype:ptype(a.shape),
+   rem:aslU?"ASL UID "+aslU+(aslWO?" · "+aslWO:""):"ASL UID not linked yet",src:ps.length?"P":"A",pout:a.pend,astage,aslU,aslWO,len:a.len})}
  // Rejected in production and replanned: closed UID whose order weight ≈ its dispatched weight + a new UID's weight
  const key=l=>[l.grade,String(l.fsize).toLowerCase().replace(/\s+/g,"")].join("|"),num=x=>+(String(x).replace(/\D/g,""))||0;
- for(const l of out){if(!l.closed||l.order-l.disp<=0.0005)continue;const rest=l.order-l.disp,tol=Math.max(0.05*l.order,0.2);
+ for(const l of out){if(l.unit||!l.closed||l.order-l.disp<=0.0005)continue;const rest=l.order-l.disp,tol=Math.max(0.05*l.order,0.2);
   const c=out.filter(n=>n!==l&&!n.replFrom&&key(n)==key(l)&&((l.so&&n.so==l.so)||(l.po&&n.po==l.po))&&num(n.uid)>num(l.uid)&&Math.abs(l.order-(l.disp+n.order))<=tol)
    .sort((x,y)=>Math.abs(rest-x.order)-Math.abs(rest-y.order))[0];
   if(c){l.repl=c.uid;c.replFrom=l.uid;c.rem=["Replanned from "+l.uid,c.rem].filter(Boolean).join(" · ")}}
@@ -239,20 +250,20 @@ function build(){const M=new Map();
   u.wos.add(l.wo);if(l.so)u.sos.add(l.so);["order","cast","roll","ht","inw","ins","pack","disp"].forEach(k=>u[k]+=l[k]);
   if(l.ship&&(!u.ship||l.ship<u.ship))u.ship=l.ship;if(l.rem){u.rems=u.rems||new Set();u.rems.add(l.rem)}u.lines.push(l)}
  UIDS=[...M.values()];
- for(const u of UIDS){u.closed=!!u.lines[0].closed;u.ost=u.lines[0].ost;u.closeType=u.lines[0].closeType;u.repl=u.lines[0].repl;u.replFrom=u.lines[0].replFrom;u.wo=[...u.wos].join(", ");u.rem=u.rems?[...u.rems].join(" · "):"";u.so=[...u.sos].join(", ");u.orderSO=u.order;if(u.repl)u.order=u.disp;u.pout=u.lines[0].pout;u.pmOnly=!!u.lines[0].pmOnly;u.out=u.closed?0:u.pout!=null?Math.round(u.pout*1000)/1000:Math.max(0,u.order-u.disp);u.short=u.closed&&u.orderSO-u.disp>0.0005;u.pct=u.order?Math.min(100,u.disp/u.order*100):0;u.proj=/^P/i.test(u.uid);
+ for(const u of UIDS){u.closed=!!u.lines[0].closed;u.ost=u.lines[0].ost;u.closeType=u.lines[0].closeType;u.repl=u.lines[0].repl;u.replFrom=u.lines[0].replFrom;u.wo=[...u.wos].join(", ");u.rem=u.rems?[...u.rems].join(" · "):"";u.so=[...u.sos].join(", ");u.orderSO=u.order;if(u.repl)u.order=u.disp;u.pout=u.lines[0].pout;u.pmOnly=!!u.lines[0].pmOnly;u.out=u.closed?0:u.pout!=null?Math.round(u.pout*1000)/1000:Math.max(0,u.order-u.disp);u.short=u.closed&&u.orderSO-u.disp>0.0005;u.pct=u.order?Math.min(100,u.disp/u.order*100):0;u.unit=u.lines[0].unit||"ASL";u.aslU=u.lines[0].aslU||"";u.aslWO=u.lines[0].aslWO||"";u.len=u.lines[0].len||"";u.proj=u.unit=="ASIL"?/^PSO|EXP-P\d/i.test(u.uid):/^P/i.test(u.uid);
   u.days=daysTo(u.ship);u.al=u.out<0.0005?"done":u.days==null?"none":u.days<0?"late":u.days<=15?"soon":"ok";
   
-  u.stage=u.closed?u.closeType:u.out<0.0005?"Dispatched":u.disp>0?"Partly dispatched":u.pack>0?"Packed":u.ins>0?"Inspected":u.inw>0?"Inward":u.ht>0?"Heat treated":u.roll>0?"Rolled":u.cast>0?"Cast":"Order confirmed"}
+  u.stage=u.unit=="ASIL"?u.lines[0].astage:u.closed?u.closeType:u.out<0.0005?"Dispatched":u.disp>0?"Partly dispatched":u.pack>0?"Packed":u.ins>0?"Inspected":u.inw>0?"Inward":u.ht>0?"Heat treated":u.roll>0?"Rolled":u.cast>0?"Cast":"Order confirmed"}
  const U=f=>[...new Set(UIDS.map(f).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
  $("arts").innerHTML=U(u=>u.art).map(v=>`<option value="${esc(v)}">`).join("");opt("fs","All work orders",U(u=>u.wo));opt("fg","All grades",U(u=>u.grade));opt("fpt","All product types",U(u=>u.ptype));
  opt("fm","All months",U(u=>u.ship.slice(0,7)),v=>MON[+v.slice(5)-1]+" "+v.slice(0,4));render()}
 function opt(id,all,vals,fmt){$(id).innerHTML=`<option value="">${all}</option>`+vals.map(v=>`<option value="${esc(v)}">${esc(fmt?fmt(v):v)}</option>`).join("")}
-function rows(){const pt=$("fpt").value,art=$("fart").value.trim().toLowerCase(),so=$("fs").value,g=$("fg").value,m=$("fm").value,a=$("fa").value,p=$("fp").value,q=$("fq").value.toLowerCase();
- return UIDS.filter(u=>(!pt||u.ptype==pt)&&(!art||String(u.art||"").toLowerCase().includes(art))&&(!so||u.wos.has(so))&&(!g||u.grade==g)&&(!m||u.ship.slice(0,7)==m)&&(!a||(a=="open"?u.al!="done":a=="short"?u.short:u.al==a))&&(!p||(p=="Yes")==u.proj)&&(!q||(u.uid+" "+u.wo+" "+u.so+" "+u.po+" "+u.art).toLowerCase().includes(q)))}
+function rows(){const un=$("fu").value,pt=$("fpt").value,art=$("fart").value.trim().toLowerCase(),so=$("fs").value,g=$("fg").value,m=$("fm").value,a=$("fa").value,p=$("fp").value,q=$("fq").value.toLowerCase();
+ return UIDS.filter(u=>(!un||u.unit==un)&&(!pt||u.ptype==pt)&&(!art||String(u.art||"").toLowerCase().includes(art))&&(!so||u.wos.has(so))&&(!g||u.grade==g)&&(!m||u.ship.slice(0,7)==m)&&(!a||(a=="open"?u.al!="done":a=="short"?u.short:u.al==a))&&(!p||(p=="Yes")==u.proj)&&(!q||(u.uid+" "+u.wo+" "+u.so+" "+u.po+" "+u.art+" "+(u.aslU||"")+" "+(u.aslWO||"")).toLowerCase().includes(q)))}
 function bars(el,map,fmt=f1,ord){const e=Object.entries(map).sort(ord||((a,b)=>b[1]-a[1])).slice(0,ord?24:8),mx=Math.max(.001,...e.map(x=>x[1]));
  $(el).innerHTML=e.map(([k,v])=>`<div class="br"><span>${esc(k.split("|")[0])}</span><div class="t"><i style="width:${v/mx*100}%"></i></div><span class="v">${fmt(v)}</span></div>`).join("")||'<div class="msg">No open quantity</div>'}
 const BON_MT=2000,BON_EUR=20;
-function bonus(){const y=TODAY.getFullYear(),bk=UIDS.reduce((a,u)=>a+(u.sodate&&+u.sodate.slice(0,4)===y?(u.orderSO!=null?u.orderSO:u.order):0),0),won=bk>=BON_MT,p=Math.min(100,bk/BON_MT*100),eur=v=>"€"+Math.round(v).toLocaleString("de-DE");
+function bonus(){const y=TODAY.getFullYear(),bk=UIDS.reduce((a,u)=>a+(u.unit!="ASIL"&&u.sodate&&+u.sodate.slice(0,4)===y?(u.orderSO!=null?u.orderSO:u.order):0),0),won=bk>=BON_MT,p=Math.min(100,bk/BON_MT*100),eur=v=>"€"+Math.round(v).toLocaleString("de-DE");
 const ic=won?'<svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>':'<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>';
 $("bonus").innerHTML=`<div class="bon${won?" won":""}"><div class="ic">${ic}</div><div class="bx"><div class="t1">Volume bonus ${y}${won?" · unlocked":""}</div><div class="t2">${won?`Congratulations — <b>${f1(bk)} MT</b> booked in ${y}. The <b>${eur(BON_EUR)}/MT</b> volume bonus is now active.`:`<b>${f1(bk)} MT</b> booked in ${y} · only <b>${f1(BON_MT-bk)} MT</b> more to unlock a <b>${eur(BON_EUR)}/MT</b> bonus.`}</div><div class="pb"><i style="width:${p}%"></i></div><div class="pl"><span>${p.toFixed(1)}% of target</span><span>Target ${BON_MT.toLocaleString("en-IN")} MT · Jan–Dec ${y}</span></div></div><div class="rt"><div class="v">${won?eur(bk*BON_EUR):eur(BON_EUR)+"/MT"}</div><div class="s">${won?"bonus earned":"bonus on reaching target"}</div></div></div>`}
 let BDM="m",BDR=[];
@@ -274,8 +285,9 @@ function alertPill(u){return{late:`<span class="pill p-late">Delayed · ${-u.day
 function render(){const R=rows(),sum=(A,k)=>A.reduce((a,u)=>a+((u.pmOnly&&(k=="order"||k=="disp"))?0:u[k]),0);
  const CY=TODAY.getFullYear(),ytd=R.filter(u=>u.sodate&&+u.sodate.slice(0,4)===CY).reduce((a,u)=>a+(u.orderSO!=null?u.orderSO:u.order),0);const ord=sum(R,"order"),dsp=sum(R,"disp"),out=sum(R,"out"),late=R.filter(u=>u.al=="late"),soon=R.filter(u=>u.al=="soon");
  const lq=sum(late,"out"),sq=sum(soon,"out"),okq=Math.max(0,out-lq-sq);
- const kp=[["UIDs",R.length.toLocaleString(),R.filter(u=>u.al!="done").length+" open",""],["Work orders",new Set(R.flatMap(u=>[...u.wos])).size,"",""],
- ["Order Qty YTD",f1(ytd),"Jan–Dec "+CY+" · all orders "+f1(ord)+" MT","g"],["Dispatched MT",f1(dsp),ord?Math.round(dsp/ord*100)+"% of order":"","g"],["Outstanding MT",f1(out),ord?Math.round(out/ord*100)+"% of order":"","w"],
+ const nA=R.filter(u=>u.unit=="ASIL").length,ytdA=R.filter(u=>u.unit=="ASIL"&&u.sodate&&+u.sodate.slice(0,4)===CY).reduce((a,u)=>a+u.order,0);
+ const kp=[["UIDs",R.length.toLocaleString(),R.filter(u=>u.al!="done").length+" open"+(nA?" · ASIL "+nA:""),""],["Work orders",new Set(R.flatMap(u=>[...u.wos])).size,"",""],
+ ["Order Qty YTD",f1(ytd),"Jan–Dec "+CY+(ytdA?" · ASL "+f1(ytd-ytdA)+" · ASIL "+f1(ytdA):" · all orders "+f1(ord)+" MT"),"g"],["Dispatched MT",f1(dsp),ord?Math.round(dsp/ord*100)+"% of order":"","g"],["Outstanding MT",f1(out),ord?Math.round(out/ord*100)+"% of order":"","w"],
  ["Project UIDs",R.filter(u=>u.proj).length,"",""],["Shipment alerts",late.length+soon.length,late.length+" delayed · "+soon.length+" due ≤15 d","b"]];
  $("kpis").innerHTML=kp.map(([l,v,s,c])=>`<div class="card kpi ${c}"><span>${l}</span><b>${v}</b><small>${s||"&nbsp;"}</small></div>`).join("");
  const O=R.filter(u=>u.out>=.0005),m1={},m2={},m4={};
@@ -290,15 +302,15 @@ function render(){const R=rows(),sum=(A,k)=>A.reduce((a,u)=>a+((u.pmOnly&&(k=="o
  R.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(x==null)x=1e9;if(y==null)y=1e9;return(typeof x=="number"?x-y:String(x).localeCompare(String(y),undefined,{numeric:true}))*sortD});
  $("thead").innerHTML="<tr>"+COLS.map(([k,l,r])=>`<th class="${r?'r':''}" data-k="${k}">${l}${sortK==k?(sortD>0?" ▲":" ▼"):""}</th>`).join("")+"</tr>";
  $("cnt").textContent="— "+R.length+" UIDs";
- $("tb").innerHTML=R.slice(0,shown).map(u=>`<tr class="${u.al=="late"||u.al=="soon"?u.al:""}" data-u="${esc(u.uid)}"><td><b>${esc(u.uid)}</b>${u.proj?'<span class="tag">PROJECT</span>':""}</td><td>${esc(u.wo)}</td><td>${esc(u.po)||"—"}</td><td>${esc(u.art)||"—"}</td><td>${esc(u.grade)}</td><td>${esc(u.fsize)}</td><td class="r">${f2(u.order)}</td><td class="r">${f2(u.disp)}</td><td class="r"><b>${f2(u.out)}</b></td><td><span class="mini"><i style="width:${u.pct}%"></i></span> ${Math.round(u.pct)}%</td><td>${fd(u.ship)}</td><td>${alertPill(u)}</td><td><span class="pill p-st">${u.stage}</span></td><td class="rem" title="${esc(u.rem)}">${esc(u.rem)||"—"}</td></tr>`).join("")||`<tr><td colspan="14" class="empty">No UIDs match the selected filters.</td></tr>`;
+ $("tb").innerHTML=R.slice(0,shown).map(u=>`<tr class="${u.al=="late"||u.al=="soon"?u.al:""}" data-u="${esc(u.uid)}"><td><b>${esc(u.uid)}</b>${u.unit=="ASIL"?'<span class="tag asil">ASIL</span>':""}${u.proj?'<span class="tag">PROJECT</span>':""}</td><td>${esc(u.wo)}</td><td>${esc(u.po)||"—"}</td><td>${esc(u.art)||"—"}</td><td>${esc(u.grade)}</td><td>${esc(u.fsize)}</td><td class="r">${f2(u.order)}</td><td class="r">${f2(u.disp)}</td><td class="r"><b>${f2(u.out)}</b></td><td><span class="mini"><i style="width:${u.pct}%"></i></span> ${Math.round(u.pct)}%</td><td>${fd(u.ship)}</td><td>${alertPill(u)}</td><td><span class="pill p-st">${u.stage}</span></td><td class="rem" title="${esc(u.rem)}">${esc(u.rem)||"—"}</td></tr>`).join("")||`<tr><td colspan="14" class="empty">No UIDs match the selected filters.</td></tr>`;
  $("more").style.display=R.length>shown?"inline-block":"none";$("more").textContent=`Show more (${R.length-shown} remaining)`}
 let cur=null;function detail(uid){cur=uid;const u=UIDS.find(x=>x.uid==uid);if(!u)return;
- const kv=[["WO No.",u.wo],["Customer PO",u.po],["Article no.",u.art],["Grade",u.grade],["Product type",u.ptype],["S.O. date",u.sodate?fd(u.sodate):""],["Size",u.fsize],["Tolerance",u.tol],["HT condition",u.htc],["Execution",u.exec],["Delivery term",u.dterm],["Shipment",fd(u.ship)],["Ex-India date",u.exin?fd(u.exin):""],["Status",u.al==="late"?`${-u.days} days delayed`:u.al==="soon"?`Due in ${u.days} days`:u.al==="ok"?`On schedule · ${u.days} days remaining`:u.al==="done"?"Completed":"—"],["Project",u.proj?"Yes":"No"],["Order status",u.ost||"—"],...(u.repl?[["S.O. quantity",f2(u.orderSO)+" MT ("+f2(u.orderSO-u.disp)+" MT replanned to "+u.repl+")"]]:[]),["Stage",u.stage],["Remarks",u.rem]];
+ const kv=[...(u.unit=="ASIL"?[["Supplying unit","ASIL · Bright bar (Unit-3) · D07G"],["ASIL SO line",u.uid],["ASL UID",u.aslU||"Not linked yet"],["ASL work order",u.aslWO||"—"],["Length",u.len]]:[]),["WO No.",u.wo],["Customer PO",u.po],["Article no.",u.art],["Grade",u.grade],["Product type",u.ptype],["S.O. date",u.sodate?fd(u.sodate):""],["Size",u.fsize],["Tolerance",u.tol],["HT condition",u.htc],["Execution",u.exec],["Delivery term",u.dterm],["Shipment",fd(u.ship)],["Ex-India date",u.exin?fd(u.exin):""],["Status",u.al==="late"?`${-u.days} days delayed`:u.al==="soon"?`Due in ${u.days} days`:u.al==="ok"?`On schedule · ${u.days} days remaining`:u.al==="done"?"Completed":"—"],["Project",u.proj?"Yes":"No"],["Order status",u.ost||"—"],...(u.repl?[["S.O. quantity",f2(u.orderSO)+" MT ("+f2(u.orderSO-u.disp)+" MT replanned to "+u.repl+")"]]:[]),["Stage",u.stage],["Remarks",u.rem]];
  const st=[["Cast",u.cast],["Rolling",u.roll],["Heat treatment",u.ht],["Inward",u.inw],["Inspection",u.ins],["Packing",u.pack],["Dispatch",u.disp]];for(let i=st.length-2;i>=0;i--)st[i][1]=Math.max(st[i][1],st[i+1][1]);
  $("dr").innerHTML=`<div class="dh"><div><h2>${esc(u.uid)} ${u.proj?'<span class="tag">PROJECT</span>':""}</h2><div>${alertPill(u)}</div></div><button class="btn" id="x">Close</button></div>
  <div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="card kpi"><span>Order MT</span><b>${f2(u.order)}</b></div><div class="card kpi g"><span>Dispatched MT</span><b>${f2(u.disp)}</b></div><div class="card kpi w"><span>Outstanding MT</span><b>${f2(u.out)}</b></div></div>
  <div class="card"><h3>UID details</h3><div class="kv">${kv.map(([a,b])=>`<div><small>${a}</small><b>${esc(b)||"—"}</b></div>`).join("")}</div></div>
- ${u.src=="P"?`<div class="card"><h3>Production flow (MT vs order ${f2(u.order)})</h3><div class="flow">${st.map(([l,v],i)=>{const p=u.order?Math.min(100,v/u.order*100):0,cls=p>=99.5?"done":v>0?"part":"todo";return `<div class="fs ${cls}"><div class="fn">${cls=="done"?"✓":i+1}</div><div class="fb"><div class="fl"><b>${l}</b><span>${f2(v)} MT · ${Math.round(p)}%</span></div><div class="t"><i style="width:${p}%"></i></div></div></div>`}).join("")}</div></div>`:`<div class="card"><h3>Production flow</h3><div class="msg">Production stage data for this UID is not in the PMST DSS tab yet.</div></div>`}
+ ${u.src=="P"?`<div class="card"><h3>${u.unit=="ASIL"?"ASL production for this ASIL order":"Production flow"} (MT vs order ${f2(u.order)})</h3><div class="flow">${st.map(([l,v],i)=>{const p=u.order?Math.min(100,v/u.order*100):0,cls=p>=99.5?"done":v>0?"part":"todo";return `<div class="fs ${cls}"><div class="fn">${cls=="done"?"✓":i+1}</div><div class="fb"><div class="fl"><b>${l}</b><span>${f2(v)} MT · ${Math.round(p)}%</span></div><div class="t"><i style="width:${p}%"></i></div></div></div>`}).join("")}</div></div>`:`<div class="card"><h3>Production flow</h3><div class="msg">${u.unit=="ASIL"?(u.aslU?"ASL rolling for "+esc(u.aslU)+" is finished (no longer in PMST); the order is at ASIL for bright bar finishing.":"This ASIL order is not yet linked to an ASL UID in ASL TO ASIL UID DETAILS."):"Production stage data for this UID is not in the PMST DSS tab yet."}</div></div>`}
  <div class="card"><h3>Line items (${u.lines.length})</h3><div class="sc"><table><thead><tr><th>WO No.</th><th>Cust PO</th><th class="r">Order</th><th class="r">Dispatch</th><th class="r">Outstanding</th><th>Shipment</th></tr></thead><tbody>${u.lines.map(l=>`<tr style="cursor:default"><td>${esc(l.wo)}</td><td>${esc(l.po)||"—"}</td><td class="r">${f2(l.order)}</td><td class="r">${f2(l.disp)}</td><td class="r">${f2(Math.max(0,l.order-l.disp))}</td><td>${fd(l.ship)}</td></tr>`).join("")}</tbody></table></div></div>`;
  $("dr").classList.add("on");$("ov").classList.add("on");$("x").onclick=closeD}
 function closeD(){$("dr").classList.remove("on");$("ov").classList.remove("on")}
@@ -337,7 +349,7 @@ $("ov").onclick=closeD;document.addEventListener("keydown",e=>{if(e.key=="Escape
 $("tb").onclick=e=>{const r=e.target.closest("tr[data-u]");if(r)detail(r.dataset.u)};
 $("thead").onclick=e=>{const t=e.target.closest("th");if(!t)return;const k=t.dataset.k;if(sortK==k)sortD*=-1;else{sortK=k;sortD=["uid","wo","po","art","rem","ship","days","grade","fsize","stage"].includes(k)?1:-1}render()};
 $("more").onclick=()=>{shown+=200;render()};
-["fs","fg","fm","fa","fp","fq","fart","fpt"].forEach(i=>$(i).oninput=()=>{shown=100;render()});
+["fu","fs","fg","fm","fa","fp","fq","fart","fpt"].forEach(i=>$(i).oninput=()=>{shown=100;render()});
 
 $("today").textContent="Today: "+fd(TODAY.getFullYear()+"-"+String(TODAY.getMonth()+1).padStart(2,"0")+"-"+String(TODAY.getDate()).padStart(2,"0"));
 function apply(S,live){D=S;LINES=merge(S);$("ttl").textContent=(S.cust||"DSS")+" · Order & Payment Dashboard";$("srcl").innerHTML="<span>"+esc(S.asof||"")+"</span>";$("srcl").classList.toggle("live",!!live);
@@ -371,6 +383,13 @@ function parseRaw(raw,got){let t;
  if((t=table(raw,["Uid","Customer"]))&&col(t.h,"Order Wt.","Order MT","Order Wt")>=0){const I={};for(const k in PM)I[k]=col(t.h,...PM[k]);const g=(r,k)=>I[k]<0?"":r[I[k]];
   got.plines=t.rows.filter(r=>/DSS/i.test(str(g(r,"cust")))&&str(g(r,"uid"))).map(r=>{const o={};for(const k in PM)o[k]=["order","cast","roll","ht","inw","ins","pack","disp","pout"].includes(k)?num(g(r,k)):k=="ship"?nd(g(r,k)):str(g(r,k));o.po=o.po.replace(/,$/,"");return o});return"pmst"}
  return null}
+function parsePM(raw){const t=table(raw,["Uid","Customer"]);if(!t)return[];const I={};for(const k in PM)I[k]=col(t.h,...PM[k]);const g=(r,k)=>I[k]<0?"":r[I[k]];
+ return t.rows.filter(r=>str(g(r,"uid"))).map(r=>{const o={};for(const k in PM)o[k]=["order","cast","roll","ht","inw","ins","pack","disp","pout"].includes(k)?num(g(r,k)):k=="ship"?nd(g(r,k)):str(g(r,k));return o})}
+function parseASIL(raw){const t=table(raw,["DemandUID","Sales Order Number"]);if(!t)return[];const h=t.h,I={d:col(h,"DemandUID"),so:col(h,"Sales Order Number"),sod:col(h,"Order Creation Date"),ost:col(h,"Order Status"),lst:col(h,"Line Status"),qty:col(h,"SO Qty (MTS)","SO Qty"),inv:col(h,"Inv Qty"),pend:col(h,"Pending Qty"),size:col(h,"Size"),len:col(h,"Length"),exec:col(h,"Execution Condition"),shape:col(h,"Shape Description"),gg:col(h,"GradeGroup"),sub:col(h,"Sub Grade"),ship:col(h,"Shipment Date"),tol:col(h,"Tolerance"),po:col(h,"PO number"),art:col(h,"Article No."),cust:col(h,"Customer Short Name")};
+ const g=(r,k)=>I[k]<0?"":r[I[k]];
+ return t.rows.filter(r=>str(g(r,"d"))&&(!str(g(r,"cust"))||/D07G/i.test(str(g(r,"cust"))))).map(r=>({d:str(g(r,"d")),so:str(g(r,"so")),sod:nd(g(r,"sod")),ost:str(g(r,"ost")),lst:str(g(r,"lst")),qty:num(g(r,"qty")),inv:num(g(r,"inv")),pend:num(g(r,"pend")),size:str(g(r,"size")).replace(/\s*mm$/i,""),len:str(g(r,"len")),exec:str(g(r,"exec")),shape:str(g(r,"shape")),grade:str(g(r,"sub"))||str(g(r,"gg")),ship:nd(g(r,"ship")),tol:str(g(r,"tol")),po:str(g(r,"po")),art:str(g(r,"art"))}))}
+function parseMap(raw){const t=table(raw,["ASIL SO UID","ASL UID"]);if(!t)return[];const a=col(t.h,"ASIL SO UID"),u=col(t.h,"ASL UID"),p=col(t.h,"PMST UID");
+ return t.rows.filter(r=>str(r[a])&&str(r[u])).map(r=>({a:str(r[a]),u:str(r[u]),p:p>=0&&str(r[p])?str(r[p]):str(r[u])}))}
 let busy=false,KEY="";
 const store={get(){try{return localStorage.getItem("dssKey")||sessionStorage.getItem("dssKey")||""}catch(e){return""}},
  set(k,rem){try{(rem?localStorage:sessionStorage).setItem("dssKey",k)}catch(e){}},clear(){try{localStorage.removeItem("dssKey");sessionStorage.removeItem("dssKey")}catch(e){}}};
@@ -381,8 +400,8 @@ function showLock(t){$("lock").classList.remove("off");document.querySelector(".
 async function load(first){if(!KEY||busy)return;busy=true;$("rf").textContent="Refreshing…";if(first){$("go").disabled=true;$("go").textContent="Checking…"}
  try{const j=await fetchData(KEY);
   if(!j.ok){if(j.error=="unauthorized"||j.error=="locked"){KEY="";store.clear();showLock(j.error=="locked"?"Too many attempts. Please try again in 15 minutes.":"Incorrect password.")}else throw new Error(j.error||"service error");return}
-  const got={};for(const k in j.tabs)parseRaw(j.tabs[k],got);
-  const S={cust:got.cust||"DAMSTAHL GMBH",plines:got.plines||[],arows:got.arows||[],pay:got.pay||[],asof:"Live data",updated:j.loaded||new Date().toISOString()};
+  const got={};for(const k in j.tabs){if(k=="apmst")got.aplines=parsePM(j.tabs[k]);else if(k=="asil")got.asil=parseASIL(j.tabs[k]);else if(k=="amap")got.amap=parseMap(j.tabs[k]);else parseRaw(j.tabs[k],got)}
+  const S={cust:got.cust||"DAMSTAHL GMBH",plines:got.plines||[],arows:got.arows||[],pay:got.pay||[],asil:got.asil||[],amap:got.amap||[],aplines:got.aplines||[],asof:"Live data",updated:j.loaded||new Date().toISOString()};
   $("lock").classList.add("off");document.querySelector(".wrap").style.visibility="";$("warn").style.display="none";apply(S,true)}
  catch(e){if(first)showLock("Could not reach the data service. Please try again.");else{$("warn").style.display="block";$("warn").textContent="Could not refresh the data just now ("+e.message+"). Showing the last loaded data."}}
  finally{busy=false;$("rf").textContent="Refresh";$("go").disabled=false;$("go").textContent="Open dashboard"}}
